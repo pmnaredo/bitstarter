@@ -8,6 +8,8 @@ and basic DOM parsing.
 var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
+var util = require('util');
+var rest = require('restler');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
 
@@ -45,14 +47,51 @@ var clone = function(fn) {
     return fn.bind({});
 };
 
+var cheerioHtmlString = function(htmlstring) {
+    return cheerio.load(htmlstring);
+};
+
+var checkHtmlString = function(htmlstring, checksfile) {
+    $ = cheerioHtmlString(htmlstring);
+    var checks = loadChecks(checksfile).sort();
+    var out = {};
+    for (var ii in checks) {
+        var present = $(checks[ii]).length > 0;
+        out[checks[ii]] = present;
+    }
+    return out;
+};
+
+
+var buildfn = function(checksfile) {
+    var checkUrl = function(result, response) {
+	if (result instanceof Error) {
+	    console.error('Error: ' + util.format(response.message));
+	}
+	else {
+	    var out = checkHtmlString(result, checksfile);
+	    var outJson = JSON.stringify(out, null, 4);
+	    console.log(outJson);
+	}
+    };
+    return checkUrl;
+};
+
 if (require.main == module) {
     program
     .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
     .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+    .option('-u, --url <url>', 'URL')
     .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+    if (program.url) {
+	var checkUrl = buildfn(program.checks);
+	rest.get(program.url).on('complete', checkUrl);
+    }
+    else {
+	var checkJson = checkHtmlFile(program.file, program.checks);
+	var outJson = JSON.stringify(checkJson, null, 4);
+	console.log(outJson);
+    }
 }
 else {
     exports.checkHtmlFile = checkHtmlFile;
